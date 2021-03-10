@@ -30,7 +30,7 @@ namespace System.IO.Compression
         /// <summary>
         /// Initialized the Inflater with the given windowBits size
         /// </summary>
-        internal Inflater(int windowBits, long uncompressedSize = -1, bool strictValidation = false)
+        internal Inflater(int windowBits, long uncompressedSize = -1, bool strictValidation = true)
         {
             Debug.Assert(windowBits >= MinWindowBits && windowBits <= MaxWindowBits);
             _finished = false;
@@ -133,7 +133,7 @@ namespace System.IO.Compression
                     _finished = true;
                 }
             }
-            else if (result == ZLibNative.ErrorCode.BufError && _strictValidation)
+            else if (!NeedsInput() && result == ZLibNative.ErrorCode.BufError && _strictValidation)
             {
                 bytesRead = -1;
             }

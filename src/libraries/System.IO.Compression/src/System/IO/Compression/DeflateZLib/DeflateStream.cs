@@ -50,7 +50,7 @@ namespace System.IO.Compression
         /// Internal constructor to check stream validity and call the correct initialization function depending on
         /// the value of the CompressionMode given.
         /// </summary>
-        internal DeflateStream(Stream stream, CompressionMode mode, bool leaveOpen, int windowBits, long uncompressedSize = -1, bool strictValidation = false)
+        internal DeflateStream(Stream stream, CompressionMode mode, bool leaveOpen, int windowBits, long uncompressedSize = -1, bool strictValidation = true)
         {
             if (stream == null)
                 throw new ArgumentNullException(nameof(stream));
