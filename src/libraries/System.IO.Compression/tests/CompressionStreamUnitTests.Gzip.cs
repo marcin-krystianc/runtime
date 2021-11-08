@@ -9,6 +9,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Xunit;
+using Xunit.Sdk;
 
 namespace System.IO.Compression
 {
@@ -285,125 +286,68 @@ namespace System.IO.Compression
             }
         }
 
-        [Fact]
-        public void StrictValidation2()
+        [Theory]
+        [InlineData(TestScenario.ReadAsync)]
+        [InlineData(TestScenario.Read)]
+        [InlineData(TestScenario.Copy)]
+        [InlineData(TestScenario.CopyAsync)]
+        public async Task StreamTruncation_IsDetected(TestScenario scenario)
         {
             var source = Enumerable.Range(0, 32).Select(i => (byte)i).ToArray();
-            var codec = new (Func<Stream, Stream> compress, Func<Stream, Stream> decompress)[]
-            {
-               (
-                    s => new System.IO.Compression.GZipStream(s, System.IO.Compression.CompressionLevel.Fastest),
-                    s => new System.IO.Compression.GZipStream(s, CompressionMode.Decompress, false)
-               )
-            };
-            string r = null;
-
-            try
-            {
-                r = RoundTrip(source, codec[0], Truncate);
-            }
-            catch(Exception ex)
-            {
-                Debug.WriteLine(ex.Message);
-            }
-
-            Assert.Equal("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", r);
-        }
-
-        private static string RoundTrip(
-         ReadOnlySpan<byte> source,
-         (Func<Stream, Stream> compress, Func<Stream, Stream> decompress) codec,
-         Func<ReadOnlyMemory<byte>, IEnumerable<(Stream input, bool? shouldBeOkay)>> peturbations)
-        {
             byte[] data;
             using (var compressed = new MemoryStream())
-            using (var gzip = codec.compress(compressed))
+            using (var gzip = new GZipStream(compressed, CompressionLevel.Fastest))
             {
                 foreach (var b in source)
                 {
                     gzip.WriteByte(b);
                 }
+
                 gzip.Dispose();
                 data = compressed.ToArray();
             }
 
-            var actual = new StringBuilder();
-            foreach (var entry in peturbations(data))
+            for (var i = 1; i < data.Length; i++)
             {
-                try
+                using (var compressedStream = new MemoryStream(data.Take(i).ToArray()))
                 {
-                    using (var input = entry.input)
-                    using (var gzip = codec.decompress(input))
-                    using (var roundtrip = new MemoryStream())
+                    using (var s = new GZipStream(compressedStream, CompressionMode.Decompress))
                     {
-                        gzip.CopyTo(roundtrip);
-                        var result = roundtrip.ToArray();
+                        var buffer = new byte[1024];
+                        var decompressedStream = new MemoryStream();
+
+                        try
+                        {
+                            switch (scenario)
+                            {
+                                case TestScenario.Copy:
+                                    s.CopyTo(decompressedStream);
+                                    break;
+
+                                case TestScenario.CopyAsync:
+                                    await s.CopyToAsync(decompressedStream);
+                                    break;
+
+                                case TestScenario.Read:
+                                    while (s.Read(buffer, 0, buffer.Length) != 0) { };
+                                    break;
+
+                                case TestScenario.ReadAsync:
+                                    while (await s.ReadAsync(buffer, 0, buffer.Length) != 0) { };
+                                    break;
+                            }
+                        }
+                        catch (InvalidDataException)
+                        {
+                            continue;
+                        }
+
+                        throw new XunitException($"Truncated stream was decompressed successfully: length={i}");
                     }
-                    actual.Append("/");
                 }
-                catch (Exception)
-                {
-                    actual.Append("x");
-                }
-            }
-
-            return actual.ToString();
-        }
-
-        private static IEnumerable<(Stream, bool? shouldBeLegal)> Truncate(ReadOnlyMemory<byte> source)
-        {
-            var data = source.ToArray();
-            for (int i = 0; i < data.Length; i++)
-            {
-                yield return (
-                    new MemoryStream(data, 0, i, writable: false),
-                    CanByteBeManipulatedSafely(data.Length, i, truncated: true));
             }
         }
-
-        private static bool? CanByteBeManipulatedSafely(int length, int index, bool truncated)
-        {
-            // https://tools.ietf.org/html/rfc1952.html#section-2.2
-            switch (index)
-            {
-                case 0: // ID1
-                case 1: // ID2
-                case 2: // CM (always gzip)
-                    return false;
-                //FLG some flags values may be illegal but ignoring for now
-                case 3:
-                    return truncated ? false : (bool?)null;
-                // MTIME
-                case 4:
-                case 5:
-                case 6:
-                case 7:
-                    return truncated ? false : true;
-                //XFL some flags values may be illegal but ignoring for now
-                case 8:
-                    return truncated ? false : (bool?)null;
-                // OS
-                case 9:
-                    return truncated ? false : (bool?)null;
-                default:
-                    // footer
-                    if (length > 18 && index > length - 4)
-                    {
-                        // isize - should be validated
-                        return false;
-                    }
-                    else if (length > 18 && index > length - 8)
-                    {
-                        // CRC32 - should be validated - technically certain manipulations could be undetected
-                        return false;
-                    }
-                    // depending on flags/xflags there may be header entries in here that are mutable
-                    // however if FLG.FHCRC was set thyen they aren't, so just assum none can be changed
-                    return false;
-            }
-        }
-
-
+            
         private sealed class DerivedGZipStream : GZipStream
         {
             public bool ReadArrayInvoked = false, WriteArrayInvoked = false;

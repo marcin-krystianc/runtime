@@ -279,11 +279,7 @@ namespace System.IO.Compression
                 if (_inflater.NeedsInput())
                 {
                     int n = _stream.Read(_buffer, 0, _buffer.Length);
-                    if (n < 0)
-                    {
-                        break;
-                    }
-                    if (n == 0)
+                    if (n <= 0)
                     {
                         if (!_inflater.Finished() && _inflater.GotAnyInput())
                             ThrowGenericInvalidData();
@@ -423,11 +419,7 @@ namespace System.IO.Compression
                         if (_inflater.NeedsInput())
                         {
                             int n = await _stream.ReadAsync(new Memory<byte>(_buffer, 0, _buffer.Length), cancellationToken).ConfigureAwait(false);
-                            if (n < 0)
-                            {
-                                break;
-                            }
-                            if (n == 0)
+                            if (n <= 0)
                             {
                                 if (!_inflater.Finished() && _inflater.GotAnyInput())
                                     ThrowGenericInvalidData();
@@ -896,6 +888,8 @@ namespace System.IO.Compression
 
                     // Now, use the source stream's CopyToAsync to push directly to our inflater via this helper stream
                     await _deflateStream._stream.CopyToAsync(this, _arrayPoolBuffer.Length, _cancellationToken).ConfigureAwait(false);
+                    if (!_deflateStream._inflater.Finished())
+                        ThrowGenericInvalidData();
                 }
                 finally
                 {
@@ -929,7 +923,7 @@ namespace System.IO.Compression
                     // Now, use the source stream's CopyToAsync to push directly to our inflater via this helper stream
                     _deflateStream._stream.CopyTo(this, _arrayPoolBuffer.Length);
                     if (!_deflateStream._inflater.Finished())
-                        throw new InvalidOperationException();
+                        ThrowGenericInvalidData();
                 }
                 finally
                 {
