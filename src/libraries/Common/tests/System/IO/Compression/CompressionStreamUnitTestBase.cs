@@ -501,24 +501,24 @@ namespace System.IO.Compression
             var buffer = new byte[16];
             var source = Enumerable.Range(0, 64).Select(i => (byte)i).ToArray();
             byte[] compressedData;
-            using (var compressed = new MemoryStream())
-            using (var gzip = new GZipStream(compressed, CompressionMode.Compress))
+            using (var mms = new MemoryStream())
+            using (var compressor = CreateStream(mms, CompressionMode.Compress))
             {
                 foreach (var b in source)
                 {
-                    gzip.WriteByte(b);
+                    compressor.WriteByte(b);
                 }
 
-                gzip.Dispose();
-                compressedData = compressed.ToArray();
+                compressor.Dispose();
+                compressedData = mms.ToArray();
             }
 
-            for (var i = 1; i <= compressedData.Length; i += 1)
+            for (var i = 0; i <= compressedData.Length; i += 1)
             {
-                var expectException = i < compressedData.Length;
+                var expectException = i> 0 && i < compressedData.Length;
                 using (var compressedStream = new MemoryStream(compressedData.Take(i).ToArray()))
                 {
-                    using (var s = new GZipStream(compressedStream, CompressionMode.Decompress))
+                    using (var s = CreateStream(compressedStream, CompressionMode.Decompress))
                     {
                         var decompressedStream = new MemoryStream();
 
